@@ -1,0 +1,4 @@
+{
+  "name": "english-cards", "version": "1.0.0", "private": true, "type": "module",
+  "scripts": { "dev": "node scripts/serve.mjs", "check": "node scripts/check.mjs", "add-lesson": "node scripts/add-lesson.mjs" }
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "id": "bub",
+    "title": "Bub · Bài học đầu tiên",
+    "pdf": "lessons/bub/bub.pdf",
+    "texts": "lessons/bub/texts.json"
+  }
+]
