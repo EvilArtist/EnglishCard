@@ -4,7 +4,7 @@ const $ = id => document.getElementById(id);
 let lessons = [], current, doc, cards = [], index = 0, renderTask, renderQueue = Promise.resolve(), revision = 0, busy = false, voices = [], speechVersion = 0;
 const synth = window.speechSynthesis;
 const key = () => `english-cards:${current.id}:${current.pdf}`;
-const readLocal = () => { try { return JSON.parse(localStorage.getItem(key()) || '{}'); } catch { return {}; } };
+const readLocal = () => { if (current?.temporary) return {}; try { return JSON.parse(localStorage.getItem(key()) || '{}'); } catch { return {}; } };
 function stop() { speechVersion++; synth?.cancel(); $('speak').querySelector('span').textContent = 'Nghe phát âm'; }
 function controls() {
   $('prev').disabled = busy || !doc || index === 0;
@@ -14,10 +14,10 @@ function controls() {
   $('export').disabled = busy || !doc;
   $('library').disabled = busy;
   $('retry').disabled = busy;
+  $('upload').disabled = busy;
 }
 async function show() {
   stop(); const token = ++revision;
-  $('counter').textContent = `THẺ ${index + 1} / ${cards.length}`;
   $('dots').textContent = `${index + 1} / ${cards.length}`;
   $('progress').style.width = `${(index + 1) / cards.length * 100}%`;
   $('text').value = cards[index] || '';
@@ -40,14 +40,16 @@ async function show() {
   });
   await renderQueue;
 }
-async function openLesson(id) {
+async function openLesson(id, file = null) {
   if (busy) return;
   busy = true; stop(); revision++; renderTask?.cancel(); await renderQueue.catch(() => {});
-  current = lessons.find(item => item.id === id); $('library').value = id;
+  const previous = current;
+  current = file ? { id: 'temporary', title: file.name + ' · Bài tạm', temporary: true, file } : lessons.find(item => item.id === id);
+  if (!current) { current = previous; busy = false; controls(); return; }
   controls(); $('canvas').hidden = true; $('status').textContent = 'Đang mở bài học…';
   let pending;
   try {
-    pending = await pdfjs.getDocument({ url: new URL(current.pdf, document.baseURI).href }).promise;
+    pending = await pdfjs.getDocument(current.temporary ? { data: await current.file.arrayBuffer() } : { url: new URL(current.pdf, document.baseURI).href }).promise;
     if (pending.numPages > 300) throw new Error('too-many');
     let overrides = {};
     if (current.texts) {
@@ -63,12 +65,20 @@ async function openLesson(id) {
       next.push(typeof local?.[pageNo] === 'string' ? local[pageNo] : overrides[pageNo] ?? text.items.map(item => item.str).join(' ').trim());
     }
     await doc?.destroy(); doc = pending; pending = null; cards = next; index = 0;
-    $('filename').textContent = current.title; $('pdf-link').href = current.pdf; $('pdf-link').hidden = false;
+    $('library').querySelector('[data-temporary]')?.remove();
+    if (current.temporary) { const option = new Option(current.title, ''); option.disabled = true; option.dataset.temporary = 'true'; $('library').add(option); }
+    $('library').value = current.temporary ? '' : current.id;
+    $('filename').textContent = current.title;
+    $('pdf-link').hidden = !!current.temporary;
+    if (current.pdf) $('pdf-link').href = current.pdf; else $('pdf-link').removeAttribute('href');
+    $('storage-note').textContent = current.temporary ? 'Bài tạm: PDF và lời sửa chỉ nằm trong bộ nhớ, không tải lên máy chủ và không lưu vào thư viện. Chọn bài khác hoặc tải lại trang sẽ bỏ bài tạm. PDF chỉ có ảnh cần nhập lời đọc thủ công.' : 'Lời sửa được lưu riêng cho từng bài trên trình duyệt này. Để dùng trên mọi thiết bị, tải lời đọc, đặt vào thư mục bài học theo hướng dẫn README rồi cập nhật website. PDF chỉ có ảnh cần nhập lời đọc thủ công.';
     busy = false; await show();
   } catch (error) {
-    await pending?.destroy(); await doc?.destroy(); doc = null; cards = [];
-    $('counter').textContent = ''; $('dots').textContent = ''; $('progress').style.width = '0%'; $('text').value = ''; $('pdf-link').hidden = true;
-    $('status').textContent = error.name === 'PasswordException' ? 'PDF có mật khẩu. Hãy dùng bản không có mật khẩu.' : error.message === 'texts' ? 'Không đọc được file lời đọc. Kiểm tra đường dẫn và nội dung JSON.' : error.message === 'too-many' ? 'Hãy chia bài thành PDF tối đa 300 trang.' : 'Không mở được bài. Kiểm tra PDF trong thư mục bài học rồi bấm Tải lại bài.';
+    await pending?.destroy(); current = previous;
+    $('library').value = current?.temporary ? '' : current?.id || '';
+    busy = false;
+    if (doc) await show();
+    $('status').textContent = error.name === 'PasswordException' ? 'PDF có mật khẩu. Hãy dùng bản không có mật khẩu.' : error.message === 'texts' ? 'Không đọc được file lời đọc. Kiểm tra đường dẫn và nội dung JSON.' : error.message === 'too-many' ? 'Hãy chia bài thành PDF tối đa 300 trang.' : 'Không mở được PDF. Hãy chọn file PDF hợp lệ hoặc kiểm tra đường dẫn bài học. Bài đang học được giữ nguyên.';
   } finally { busy = false; controls(); }
 }
 function loadVoices() {
@@ -91,10 +101,19 @@ function speak() {
 }
 function move(delta) { if (!busy && doc) { index = Math.max(0, Math.min(cards.length - 1, index + delta)); show(); } }
 $('library').onchange = e => openLesson(e.target.value);
-$('retry').onclick = () => current && openLesson(current.id);
+$('retry').onclick = () => current && openLesson(current.id, current.file);
+$('upload').onclick = () => $('pdf-file').click();
+$('pdf-file').onchange = async () => {
+  const file = $('pdf-file').files[0];
+  $('pdf-file').value = '';
+  if (!file || busy) return;
+  if (file.size > 30 * 1024 * 1024) { $('status').textContent = 'Hãy chọn PDF không quá 30 MB.'; return; }
+  await openLesson(null, file);
+};
 $('prev').onclick = () => move(-1); $('next').onclick = () => move(1); $('speak').onclick = speak;
 $('text').oninput = () => {
   cards[index] = $('text').value; controls();
+  if (current.temporary) { $('status').textContent = 'Lời đọc chỉ được giữ trong bài tạm này, không lưu trên trình duyệt.'; return; }
   try { const edits = readLocal() || {}; edits[index + 1] = cards[index]; localStorage.setItem(key(), JSON.stringify(edits)); $('status').textContent = 'Đã lưu lời đọc trên trình duyệt này. Tải lời đọc để lưu vào project.'; }
   catch { $('status').textContent = 'Trình duyệt không lưu được. Hãy tải lời đọc trước khi đóng trang.'; }
 };

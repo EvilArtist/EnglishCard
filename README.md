@@ -107,3 +107,7 @@ npm run check
 Kiểm tra ID trùng, file bị thiếu, định dạng PDF và cấu trúc lời đọc. Sau đó mở bằng `npm run dev`, chọn bài, chuyển thẻ và thử nút loa. Lệnh kiểm tra không thay thế việc xem nội dung PDF.
 
 Thư viện PDF.js 4.10.38 được phân phối theo Apache-2.0; xem `public/vendor/LICENSE`. Nội dung PDF thuộc chủ sở hữu tương ứng.
+
+## Mở PDF tạm từ giao diện
+
+Nhấn **Mở PDF từ máy** và chọn PDF (tối đa 30 MB, 300 trang). Mỗi trang trở thành một thẻ; dùng nút loa và chuyển thẻ như bài trong thư viện. File chỉ được đọc trong bộ nhớ trình duyệt, không gửi lên máy chủ, không thêm vào `lessons.json`, không lưu PDF hoặc lời sửa vào bộ nhớ lâu dài. Chọn bài khác hoặc tải lại trang sẽ bỏ bài tạm. PDF không có lớp chữ cần nhập lời đọc thủ công. Nếu mở file lỗi, bài đang học được giữ nguyên.
